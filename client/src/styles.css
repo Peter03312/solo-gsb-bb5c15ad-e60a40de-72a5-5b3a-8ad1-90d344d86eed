@@ -275,6 +275,42 @@ body {
 .rated-text { font-size: 10px; fill: var(--red); }
 
 .rehearse-actions { display: flex; gap: 10px; margin-top: 8px; }
+
+/* ---- 停电预演 ---- */
+.outage-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.outage-row select {
+  flex: 1.4;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 9px;
+  font-size: 13px;
+  min-width: 220px;
+}
+.outage-row input[type='datetime-local'] {
+  flex: 1;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 9px;
+  font-size: 13px;
+}
+.outage-summary { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.outage-h3 { font-size: 15px; margin: 0 0 10px; }
+.legend {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--muted);
+  margin: 2px 0 8px;
+}
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.lg { display: inline-block; width: 22px; height: 3px; border-radius: 2px; }
+.lg-remaining { background: var(--blue); height: 3px; }
+.lg-original { background: #94a3b8; height: 2px; background-image: linear-gradient(to right, #94a3b8 5px, transparent 5px); background-size: 9px 2px; background-repeat: repeat-x; }
+.lg-lost { background: rgba(225, 29, 72, .45); height: 10px; border-radius: 2px; }
+.lg-band { background: rgba(180, 83, 9, .18); height: 10px; border-radius: 2px; border: 1px solid rgba(180,83,9,.35); }
+.lg-rated { background: var(--red); height: 0; border-top: 2px dashed var(--red); }
+
 .violation-block {
   border: 1px solid #fecdd3;
   background: #fff5f6;

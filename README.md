@@ -23,6 +23,12 @@
   非正功率、非法时段（空、格式错、起点不早于终点）都会返回中文错误；所有写操作都包在
   SQLite 事务中，失败即回滚。
 - 设备只能接入 **末级回路**（无子节点的节点），已挂设备的节点不能再作为配电箱挂下级。
+- **停电检修预演（纯只读，不改配置）**：为多个配电箱 / 末级回路分别填写停电窗口
+  `[停电开始, 停电结束)`，停电作用于所选节点及其 **全部后代设备**；只统计设备
+  **原运行时段与停电窗口的交集**（沿用左闭右开）；同一设备受祖先、子节点或多个重叠
+  窗口影响时先 **合并失供区间，不重复计入**。结果按时间段给出每个回路的
+  **原负载 / 剩余供电负载 / 失供负载**，并列出受影响设备及其 **累计失供时长**；
+  未受影响分支保持原负载。空方案、缺失回路、缺失或非法起止时间一律明确报错且不生成结果。
 
 ## 一键启动（推荐，Docker Compose）
 
@@ -101,6 +107,14 @@ DB_PATH=./data/power.db npm start          # 打开 http://localhost:3000
    - 若任一祖先回路会超额，整次改接被拒绝并列出回路 / 时段 / 峰值，配置不变；
    - 通过后列出受影响回路的改接后峰值，点击「② 确认改接」生效；
    - 预演后配置一旦变化，确认按钮自动失效，需要重新预演。
+5. **停电预演** 页：用「+ 停电安排」为多个配电箱 / 末级回路分别选择节点并填写停电起止
+   时间 →「预演停电影响」：
+   - 时间线在原有负载视图上叠加：灰虚线为 **原负载**、蓝线为 **剩余供电负载**、
+     两者之间的红区为 **失供负载**，橙色底纹为该回路实际生效的停电窗口（祖先停电也会
+     透传显示）；行下标注原峰值 / 剩余峰值，顶部汇总受影响回路、设备与累计失供时长；
+   - 下方表格逐台列出受影响设备的失供区间（已合并）与累计失供时长；未受影响分支保持
+     原负载；
+   - 预演全程只读：不改配电树、设备接线或运行时段（配置版本不变），可反复调整窗口重算。
 
 ## HTTP API（均返回 JSON）
 
@@ -116,6 +130,75 @@ DB_PATH=./data/power.db npm start          # 打开 http://localhost:3000
 | POST | `/api/rehearsals` | 预演改接 `{device_id, to_circuit_id}`；超额返回 422 与明细 |
 | POST | `/api/rehearsals/:token/confirm` | 确认改接；配置已变返回 410 `STALE` |
 | DELETE | `/api/rehearsals/:token` | 放弃预演 |
+| POST | `/api/outages/preview` | 停电检修影响预演（**纯计算、不落库**）；见下 |
+
+### 停电影响预演 `POST /api/outages/preview`
+
+请求体：时间支持分钟精度 `YYYY-MM-DDTHH:MM` 或秒精度（可跨天）；同一节点可给多个窗口，
+同一设备命中的祖先 / 子节点 / 重叠窗口会先合并再统计，不重复计入。
+
+```json
+{
+  "outages": [
+    { "circuit_id": 2, "start": "2026-10-01T20:00", "end": "2026-10-01T20:30" },
+    { "circuit_id": 4, "start": "2026-10-01T20:15", "end": "2026-10-01T21:00" }
+  ]
+}
+```
+
+响应（节选）：`range` 为事件时间范围；`segments` 为全局时间段；每个回路的 `timeline`
+分段给出 `original`（原负载）、`remaining`（剩余供电负载）、`lost`（失供负载，单位 W），
+`targeted` 表示该节点本身被安排停电，`affected` 表示确有设备失供；`affected_devices`
+逐台给出合并后的 `lost_periods` 与累计 `lost_seconds` / `lost_minutes`。
+
+```json
+{
+  "outages": [ …已规范化的停电窗口… ],
+  "range": { "start": "2026-10-01T16:00:00", "end": "2026-10-01T23:00:00" },
+  "segments": [ { "start": "…", "end": "…" } ],
+  "summary": {
+    "targeted_circuit_count": 2,
+    "affected_circuit_count": 3,
+    "affected_device_count": 3,
+    "total_lost_seconds": 5400,
+    "total_lost_minutes": 90
+  },
+  "circuits": [
+    {
+      "id": 4, "name": "舞台灯回路 L1", "kind": "circuit", "parent_id": 2,
+      "path": "主配电箱 AP / 灯光分箱 LP / 舞台灯回路 L1",
+      "rated_power": 12000, "targeted": true, "affected": true,
+      "peak_original": 13000, "peak_remaining": 13000, "peak_lost": 13000,
+      "timeline": [
+        { "start": "…20:00:00", "end": "…20:30:00",
+          "original": 13000, "remaining": 0, "lost": 13000 }
+      ]
+    }
+  ],
+  "affected_devices": [
+    { "id": 1, "name": "摇头灯 A", "power_w": 5000, "circuit_id": 4,
+      "lost_periods": [ { "start": "…20:00:00", "end": "…20:30:00" } ],
+      "lost_seconds": 1800, "lost_minutes": 30, "circuit_name": "舞台灯回路 L1",
+      "path": "主配电箱 AP / 灯光分箱 LP / 舞台灯回路 L1" }
+  ]
+}
+```
+
+调用示例（curl）：
+
+```bash
+curl -X POST http://localhost:3000/api/outages/preview \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "outages": [
+      { "circuit_id": 2, "start": "2026-10-01T20:00", "end": "2026-10-01T20:30" }
+    ]
+  }'
+```
+
+错误情况（HTTP 400，不生成任何结果）：`outages` 缺失或非数组 → `INVALID_OUTAGE`；
+空数组 → `EMPTY_OUTAGE`；回路不存在 → `MISSING_CIRCUIT`（400，`details.index` 指认
+第几条）；时间缺失 / 格式非法 → `INVALID_TIME`；起点不早于终点 → `INVALID_OUTAGE`。
 
 ## 目录结构
 
@@ -127,8 +210,10 @@ DB_PATH=./data/power.db npm start          # 打开 http://localhost:3000
 │       ├── index.js        # 入口/初始化
 │       ├── db.js           # 建表、配置版本（预演失效机制）
 │       ├── load.js         # 负载/超限区间计算（事件扫描）
+│       ├── outage.js       # 停电影响预演（失供区间合并、交集、分段负载）
 │       ├── validators.js   # 功率/时段校验与重叠合并
 │       └── routes/
+│           └── outages.js  # POST /api/outages/preview（纯只读）
 └── client/                 # React + Vite
-    └── src/components/     # 配电树 / 设备时段 / 负载时间线 / 改接预演
+    └── src/components/     # 配电树 / 设备时段 / 负载时间线 / 改接预演 / 停电预演
 ```

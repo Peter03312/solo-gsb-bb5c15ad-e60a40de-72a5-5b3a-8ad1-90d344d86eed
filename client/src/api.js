@@ -38,4 +38,7 @@ export const api = {
     request('POST', '/api/rehearsals', { device_id: deviceId, to_circuit_id: toCircuitId }),
   confirmRehearsal: (token) => request('POST', `/api/rehearsals/${token}/confirm`),
   discardRehearsal: (token) => request('DELETE', `/api/rehearsals/${token}`),
+
+  // 停电检修影响预演：outages = [{circuit_id, start, end}]，纯计算不落库
+  outagePreview: (outages) => request('POST', '/api/outages/preview', { outages }),
 };

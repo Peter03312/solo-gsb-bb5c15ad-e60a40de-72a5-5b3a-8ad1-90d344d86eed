@@ -58,3 +58,13 @@ export function circuitPath(id, byId) {
 export function isLeaf(id, children) {
   return (children.get(id)?.length ?? 0) === 0;
 }
+
+/** 累计时长（秒）→ “X 小时 Y 分钟 / X 分钟” 的中文展示 */
+export function durationText(seconds) {
+  const mins = Math.round(seconds / 60);
+  if (mins <= 0) return '0 分钟';
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h === 0) return `${m} 分钟`;
+  return m === 0 ? `${h} 小时` : `${h} 小时 ${m} 分钟`;
+}
